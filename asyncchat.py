@@ -1,3 +1,17 @@
+#!/usr/bin/env python3.6
+
+"""
+Asynchronous Chat Server
+------------------------
+
+This script runs a TCP/IP chat server that may be connected to via
+telnet.
+
+It uses Python's async and await keywords to serve multiple
+simultaneous client without the need for threads or processes.
+
+"""
+
 from collections import deque  # doubled ended queue
 
 import select
@@ -69,7 +83,7 @@ class Server:
     def __init__(self, host, port):
         self.host = host
         self.port = port
-        self._tasks = deque()
+        self._coros = deque()
 
     @classmethod
     def make_socket(cls, host, port):
@@ -98,17 +112,17 @@ class Server:
         )
         return rlist, wlist
 
-    def add_task(self, coro, send=None):
+    def add_coro(self, coro, send=None):
         """Add a coroutine to run on the next loop."""
-        self._tasks.append((coro, send))
+        self._coros.append((coro, send))
 
     def _run_coroutines(self):
         """Run coroutines until all are awaiting or stalled."""
         # Send stored value to coroutines and run them until the next
         # awaitable. If a coroutine yields None, it is 'stalled'.
         stalled = []
-        while self._tasks:
-            coro, send = self._tasks.popleft()
+        while self._coros:
+            coro, send = self._coros.popleft()
             try:
                 awaiting = coro.send(send)
             except StopIteration:
@@ -121,9 +135,9 @@ class Server:
                 else:
                     awaiting.coro = coro
                     # Stalled coroutines may be able to run now.
-                    self._tasks.extend(stalled)
+                    self._coros.extend(stalled)
         # Stash stalled coroutine for later.
-        self._tasks.extend(stalled)
+        self._coros.extend(stalled)
 
     def run_forever(self):
         """Run the server forever (or until you press Ctrl+C)."""
@@ -143,17 +157,17 @@ class Server:
                     # Pending new connection.
                     connection = self.accept(server_socket)
                     coro = connection.run()
-                    self.add_task(coro)
+                    self.add_coro(coro)
                 else:
                     # Data available. Read it and send it to coroutine.
                     data = reader.socket.recv(reader.max_bytes)
-                    self.add_task(reader.coro, data)
+                    self.add_coro(reader.coro, data)
 
             for writer in writers:
                 # Socket may be written to, write data and send
                 # bytes sent count to coroutine next cycle.
                 bytes_sent = writer.socket.send(writer.data)
-                self.add_task(writer.coro, bytes_sent)
+                self.add_coro(writer.coro, bytes_sent)
 
 
 class Connection:
@@ -218,12 +232,12 @@ class Connection:
                     break
                 await self.broadcast(f'[{name}]\t{line.rstrip()}')
         finally:
-            self.chatters.pop(self)
+            self.chatters.discard(self)
         await self.broadcast(f'@{name} left the room')
 
     async def log_chatters(self):
         """Tell the user who is online."""
-        names = sorted(chatter.name for name in self.chatters)
+        names = sorted(chatter.name for chatter in self.chatters)
         for name in names:
             await self.writeline(f'@{name} is here')
 
@@ -242,5 +256,12 @@ class Connection:
 
 
 if __name__ == "__main__":
-    server = Server('127.0.0.1', 8000)
+    import sys
+    if len(sys.argv) == 3:
+        _, host, _port = sys.argv
+        port = int(_port)
+    else:
+        host = '127.0.0.1'
+        port = 2323
+    server = Server(host, port)
     server.run_forever()
