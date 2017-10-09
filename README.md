@@ -20,7 +20,7 @@ If you open multiple connections you will be able to send chat messages between 
 If you want to run the server on the internet, launch `asyncchat.py` as follows:
 
 ```
-sudo python3.5 asynchat.py 0.0.0.0 23
+sudo python3.6 asynchat.py 0.0.0.0 23
 ```
 
 Then you can connect with 
